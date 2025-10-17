@@ -1,0 +1,39 @@
+version: '3.8'
+services:
+  postgres:
+    image: postgres:16
+    container_name: indexer_postgres
+    environment:
+      POSTGRES_DB: indexer_db
+      POSTGRES_USER: a_user
+      POSTGRES_PASSWORD: pass123
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U a_user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app:
+    build: .
+    container_name: indexer_app
+    depends_on:
+      - postgres
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: 5432
+      DATABASE_NAME: indexer_db
+      DATABASE_USER: a_user
+      DATABASE_PASSWORD: pass123
+    volumes:
+      - ./docs:/app/docs:ro
+      - ./app:/app:ro
+    command: python /app/indexer.py
+    restart: "no"
+
+volumes:
+  pgdata:
