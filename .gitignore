@@ -6,6 +6,12 @@ __pycache__/
 # C extensions
 *.so
 
+# IDE / editors
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
 # Distribution / packaging
 .Python
 build/
@@ -50,6 +56,11 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 cover/
+
+# Database files (lokalne)
+*.sqlite3
+*.sqlite
+*.db
 
 # Translations
 *.mo
@@ -113,7 +124,7 @@ celerybeat.pid
 
 # Environments
 .env
-.venv
+.venv/
 env/
 venv/
 ENV/

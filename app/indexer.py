@@ -2,7 +2,8 @@
 # File: app/indexer.py
 import os
 import math
-import json
+import uuid
+
 import apache_beam as beam
 from database import create_table, insert_document
 
@@ -60,11 +61,18 @@ def run_pipeline(docs_dir='docs'):
             beam.pvalue.AsDict(df),
             N
         )
-
-        # zapisujemy filename jako basename i przekazujemy dict (insert_document zrobi serializację)
+        # Generujemy UUID, zapisujemy pełną ścieżkę oraz reprezentację w jednym dict
         (
-            doc_tfidf
-            | 'ToDB' >> beam.Map(lambda kv: insert_document(os.path.basename(kv[0]), kv[1]))
+                doc_tfidf
+                | 'ToDB' >> beam.Map(
+            lambda kv: insert_document(
+                str(uuid.uuid4()),
+                {'path': os.path.abspath(kv[0]), 'tfidf': kv[1]}
+            )
+        )
+
+
+
         )
 
 if __name__ == '__main__':
