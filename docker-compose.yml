@@ -8,12 +8,12 @@ services:
       POSTGRES_USER: a_user
       POSTGRES_PASSWORD: pass123
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U a_user"]
+      test: ["CMD-SHELL", "pg_isready -U a_user -d indexer_db"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -31,7 +31,7 @@ services:
       DATABASE_PASSWORD: pass123
     volumes:
       - ./docs:/app/docs:ro
-      - ./app:/app:ro
+      - ./app:/app
     command: python /app/indexer.py
     restart: "no"
 

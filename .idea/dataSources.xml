@@ -8,5 +8,12 @@
       <jdbc-url>jdbc:sqlite:C:\Users\danie_000\Desktop\Nauka\STUDIA\Akwizycja Danych\DataAcquisitionProject1\index.db</jdbc-url>
       <working-dir>$ProjectFileDir$</working-dir>
     </data-source>
+    <data-source source="LOCAL" name="indexer_db@127.0.0.1" uuid="76dc609b-1b1e-49e6-b87b-a92208461c91">
+      <driver-ref>postgresql</driver-ref>
+      <synchronize>true</synchronize>
+      <jdbc-driver>org.postgresql.Driver</jdbc-driver>
+      <jdbc-url>jdbc:postgresql://127.0.0.1:5432/indexer_db</jdbc-url>
+      <working-dir>$ProjectFileDir$</working-dir>
+    </data-source>
   </component>
 </project>
