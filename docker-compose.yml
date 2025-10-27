@@ -2,9 +2,9 @@ version: '3.8'
 services:
   postgres:
     image: postgres:16
-    container_name: indexer_postgres
+    container_name: index_searcher_postgres
     environment:
-      POSTGRES_DB: indexer_db
+      POSTGRES_DB: index_searcher_db
       POSTGRES_USER: a_user
       POSTGRES_PASSWORD: pass123
     ports:
@@ -13,26 +13,28 @@ services:
       - pgdata:/var/lib/postgresql/data
       - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U a_user -d indexer_db"]
+      test: ["CMD-SHELL", "pg_isready -U a_user -d index_searcher_db"]
       interval: 10s
       timeout: 5s
       retries: 5
-
   app:
     build: .
-    container_name: indexer_app
+    container_name: index_searcher_app
     depends_on:
       - postgres
     environment:
+      SMOOTH_IDF: 1
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: indexer_db
+      DATABASE_NAME: index_searcher_db
       DATABASE_USER: a_user
       DATABASE_PASSWORD: pass123
     volumes:
       - ./docs:/app/docs:ro
       - ./app:/app
-    command: python /app/indexer.py
+    command: sh -c "python /app/indexer.py"
+    stdin_open: true
+    tty: true
     restart: "no"
 
 volumes:

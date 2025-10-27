@@ -5,4 +5,3 @@ COPY requirements.txt .
 RUN pip install --upgrade pip && pip install --no-cache-dir -r requirements.txt
 RUN mkdir -p /app/docs && chmod 755 /app/docs
 COPY . .
-CMD ["python", "indexer.py"]

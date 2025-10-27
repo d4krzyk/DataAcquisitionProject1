@@ -6,10 +6,8 @@ import uuid
 import re
 import unicodedata
 import apache_beam as beam
-try:
-    from .database import create_table, insert_document
-except Exception:
-    from database import create_table, insert_document
+from database import create_table, insert_document
+
 
 STOPWORDS = {
     # polskie podstawowe
@@ -58,12 +56,6 @@ def compute_tf(tokens):
         counts[t] = counts.get(t, 0) + 1
     return {t: c / total for t, c in counts.items()}
 
-# def compute_counts(tokens):
-#     """Zwraca dict token -> liczba wystąpień w dokumencie."""
-#     counts = {}
-#     for t in tokens:
-#         counts[t] = counts.get(t, 0) + 1
-#     return counts
 
 def compute_tfidf_element(elem, df_dict, total_docs):
     """
@@ -113,21 +105,9 @@ def run_pipeline(docs_dir='docs'):
         # Generujemy UUID, zapisujemy pełną ścieżkę oraz reprezentację w jednym dict
         (
                 doc_tfidf | 'ToDB' >> beam.Map(lambda kv: insert_document(
-                str(uuid.uuid4()),{'path': os.path.abspath(kv[0]), 'tfidf': kv[1],'counts': counts_map.get(kv[0],{})}
+                str(os.path.abspath(kv[0])),{'tfidf': kv[1]}))
         )
-        # (
-        #     doc_tfidf
-        #     | 'ToDB' >> beam.Map(
-        #         lambda kv, counts_map: insert_document(
-        #             str(uuid.uuid4()),
-        #             {'path': os.path.abspath(kv[0]), 'tfidf': kv[1], 'counts': counts_map.get(kv[0], {})}
-        #         ),
-        #         beam.pvalue.AsDict(doc_counts)
-        #     )
-        # )
 
-
-        )
 
 if __name__ == '__main__':
     run_pipeline()

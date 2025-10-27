@@ -1,6 +1,6 @@
 # DataAcquisitionProject1
 
-Prosty pipeline indeksujący dokumenty tekstowe i zapisujący strukturę indeksu do PostgreSQL. Używa Apache Beam do przetwarzania, psycopg do połączeń z bazą oraz Dockera do uruchomienia środowiska.
+Prosty pipeline indeksujący i wyszukiwający dokumenty tekstowe i zapisujący strukturę indeksu do PostgreSQL. Używa Apache Beam do przetwarzania, psycopg do połączeń z bazą oraz Dockera do uruchomienia środowiska.
 
 ## Struktura projektu
 - `Dockerfile` — obraz aplikacji Python.
@@ -19,36 +19,27 @@ Prosty pipeline indeksujący dokumenty tekstowe i zapisujący strukturę indeksu
 
 ## Uruchomienie (Docker)
 1. Zbudować i uruchomić:
-   - \`docker compose up --build\`
+   - `docker compose up --build`
 2. Wyłączyć i usunąć wolumeny danych:
-   - \`docker compose down -v\`
-
-## Uruchomienie lokalne (bez Dockera)
-1. Stwórz i aktywuj virtualenv:
-   - \`python -m venv .venv\`
-   - \`.\.venv\Scripts\activate\` (Windows)
-2. Zainstaluj zależności:
-   - \`pip install -r requirements.txt\`
-3. Uruchom pipeline:
-   - \`python app/indexer.py\`
-
-> Uruchamiając lokalnie upewnić się, że PostgreSQL jest dostępny i zmienne środowiskowe (poniżej) ustawione.
+   - `docker compose down -v`
+3. Odpalenie wyszukiwarki:
+   - `docker-compose run --rm app python /app/searcher.py`
 
 ## Zmienne środowiskowe
 Aplikacja odczytuje (przykładowe wartości są w \`docker-compose.yml\`):
-- \`DATABASE_HOST\`
-- \`DATABASE_PORT\`
-- \`DATABASE_NAME\`
-- \`DATABASE_USER\`
-- \`DATABASE_PASSWORD\`
+- `DATABASE_HOST`
+- `DATABASE_PORT`
+- `DATABASE_NAME`
+- `DATABASE_USER`
+- `DATABASE_PASSWORD`
 
 ## Testy
-- Uruchom: \`pytest\`
+- Uruchom: `pytest`
 
 ## Uwagi i troubleshooting
-- \`init.sql\` tworzy tabelę \`files\` z kolumną \`index_structure JSONB\`.  
-- \`app/database.py\` zawiera prosty retry w \`create_table()\` — przy pracy z Compose poprawia start przy braku gotowej bazy.  
-- Montowanie wolumenów: montując \`./app:/app\` nadpisujesz pliki z obrazu — oczekiwane w trybie deweloperskim.  
-- Jeśli instalacja z \`requirements.txt\` się nie powiedzie, sprawdź kodowanie pliku / usuń niewidoczne znaki i spróbuj ponownie.
+- `init.sql` tworzy tabelę `files` z kolumną `index_structure JSONB`.  
+- `app/database.py` zawiera prosty retry w `create_table()` — przy pracy z Compose poprawia start przy braku gotowej bazy.  
+- Montowanie wolumenów: montując `./app:/app` nadpisujesz pliki z obrazu — oczekiwane w trybie deweloperskim.  
+- Jeśli instalacja z `requirements.txt` się nie powiedzie, sprawdź kodowanie pliku / usuń niewidoczne znaki i spróbuj ponownie.
 
 Licencja i dalsze instrukcje można dopisać według potrzeb.
