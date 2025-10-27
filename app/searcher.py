@@ -1,5 +1,4 @@
 import os
-import re
 import math
 import json
 import threading
@@ -7,48 +6,58 @@ import queue
 import traceback
 import unicodedata
 import sys
+import logging
 import apache_beam as beam
 from indexer import tokenize, compute_tf
 from database import fetch_all_documents
 
+_qvec_cache = {}
 
-def build_corpus_from_db():
-    rows = fetch_all_documents()  # (id, filename, index_structure)
-    docs = []
-    for row in rows:
-        db_id, filename, index_structure = row
-        if isinstance(index_structure, str):
-            try:
-                index_structure = json.loads(index_structure)
-            except Exception:
-                index_structure = {}
-        tfidf = index_structure.get('tfidf', {}) if isinstance(index_structure, dict) else {}
-        docs.append({'db_id': db_id, 'filename': filename, 'tfidf': tfidf})
-    return docs
 
-def compute_df(docs):
-    df = {}
-    for d in docs:
-        for token in d['tfidf'].keys():
-            df[token] = df.get(token, 0) + 1
-    return df
 
+# Ukryj ostrzeżenia z wewnętrznych transformów Beam (np. _TopPerBundle)
+logging.getLogger('apache_beam.transforms.core').setLevel(logging.ERROR)
+
+def _col(text: str, code: str) -> str:
+    return f"\033[{code}m{text}\033[0m"
+
+# def build_corpus_from_db():
+#     rows = fetch_all_documents()  # (id, filename, index_structure)
+#     docs = []
+#     for row in rows:
+#         db_id, filename, index_structure = row
+#         if isinstance(index_structure, str):
+#             try:
+#                 index_structure = json.loads(index_structure)
+#             except Exception:
+#                 index_structure = {}
+#         tfidf = index_structure.get('tfidf', {}) if isinstance(index_structure, dict) else {}
+#         docs.append({'db_id': db_id, 'filename': filename, 'tfidf': tfidf})
+#     return docs
+#
+# def compute_df(docs):
+#     df = {}
+#     for d in docs:
+#         for token in d['tfidf'].keys():
+#             df[token] = df.get(token, 0) + 1
+#     return df
+#
 def compute_idf(token, df_dict, N):
-    smooth = os.getenv('SMOOTH_IDF', '1') == '1'
-    df_val = df_dict.get(token, 0)
-    if smooth:
-        return math.log((1 + N) / (1 + df_val)) + 1.0
-    else:
-        return math.log(N / df_val) if df_val > 0 else 0.0
-
-def compute_query_tfidf(query, df_dict, N):
-    tokens = tokenize(query)
-    tf = compute_tf(tokens)
-    q_tfidf = {}
-    for token, tf_val in tf.items():
-        idf = compute_idf(token, df_dict, N)
-        q_tfidf[token] = tf_val * idf
-    return q_tfidf
+     smooth = os.getenv('SMOOTH_IDF', '1') == '1'
+     df_val = df_dict.get(token, 0)
+     if smooth:
+         return math.log((1 + N) / (1 + df_val)) + 1.0
+     else:
+         return math.log(N / df_val) if df_val > 0 else 0.0
+#
+# def compute_query_tfidf(query, df_dict, N):
+#     tokens = tokenize(query)
+#     tf = compute_tf(tokens)
+#     q_tfidf = {}
+#     for token, tf_val in tf.items():
+#         idf = compute_idf(token, df_dict, N)
+#         q_tfidf[token] = tf_val * idf
+#     return q_tfidf
 
 def cosine_similarity(vec_a, vec_b):
     dot = sum(v * vec_b.get(k, 0.0) for k, v in vec_a.items())
@@ -58,38 +67,96 @@ def cosine_similarity(vec_a, vec_b):
         return 0.0
     return dot / (norm_a * norm_b)
 
-def search(query, similarity_fn=None):
-    docs = build_corpus_from_db()
-    N = len(docs)
-    if N == 0:
-        print("Brak dokumentów w indeksie.")
-        return []
-    df = compute_df(docs)
-    qvec = compute_query_tfidf(query, df, N)
+
+def _build_qvec_local(query, df_dict, N):
+    tokens = tokenize(query)
+    tf = compute_tf(tokens)
+    qvec = {}
+    for token, tf_val in tf.items():
+        idf = compute_idf(token, df_dict, N)
+        qvec[token] = tf_val * idf
+    return qvec
+
+def score_doc_worker(doc, df_dict, N, query, sim=None):
+    key = query
+    if key not in _qvec_cache:
+        _qvec_cache[key] = _build_qvec_local(query, df_dict, N)
+    qvec = _qvec_cache[key]
+    sfn = sim or cosine_similarity
+    return (doc['db_id'], doc['filename'], sfn(qvec, doc.get('tfidf', {})))
+
+def _read_docs_worker(_):
+    # Wywoływane na workerze; używa fetch_all_documents() z app.database
+    rows = fetch_all_documents()
+    for row in rows:
+        db_id, filename, index_structure = row
+        if isinstance(index_structure, str):
+            try:
+                index_structure = json.loads(index_structure)
+            except Exception:
+                index_structure = {}
+        tfidf = index_structure.get('tfidf', {}) if isinstance(index_structure, dict) else {}
+        yield {'db_id': db_id, 'filename': filename, 'tfidf': tfidf}
+
+
+def run_search_pipeline(query, top_n=None, similarity_fn=None, results_path='search_results.txt'):
+    top_n = top_n or int(os.getenv("SEARCH_TOP", "10"))
     sim = similarity_fn or cosine_similarity
-    results = []
-    for d in docs:
-        score = sim(qvec, d['tfidf'])
-        results.append((d['db_id'], d['filename'], score))
-    results.sort(key=lambda x: x[2], reverse=True)
-    topk = results[:N]
 
-    for db_id, filename, score in topk:
-        print(f"{db_id} {filename} score={score:.6f}")
+    # Informacje widoczne od razu w terminalu głównym
+    print(_col(f"Rozpoczynam wyszukiwanie dla: {query}", "1;36"), flush=True)
+    print(_col("Uruchamiam pipeline Beam...", "1;33"), flush=True)
+    print(_col("Czytam dokumenty z bazy...", "0;37"), flush=True)
 
-    return topk
+    with beam.Pipeline() as p:
+        # inicjalny element żeby wywołać czytanie w workerze
+        docs_pc = (
+            p
+            | 'Init' >> beam.Create([None])
+            | 'ReadFromDB' >> beam.FlatMap(_read_docs_worker)
+            | 'LogRead' >> beam.Map(lambda d: (print(_col(f"[READ] id={d.get('db_id')} file={d.get('filename')}", "0;34"), flush=True), d)[1])
+        )
+
+        total_docs = docs_pc | 'CountDocs' >> beam.combiners.Count.Globally()
+
+        # pokaż liczbę dokumentów (drukowane w workerze, zwykle pojedynczy wpis)
+        _ = total_docs | 'LogTotal' >> beam.Map(lambda n: (print(_col(f"[COUNT] Łącznie dokumentów: {n}", "1;32"), flush=True), n)[1])
+
+        token_doc_ones = docs_pc | 'TokensPerDoc' >> beam.FlatMap(lambda d: ((t, 1) for t in d.get('tfidf', {}).keys()))
+        df_pc = token_doc_ones | 'CountDF' >> beam.CombinePerKey(sum)
+
+        # przed oceną można dodać informację, że ocena dokumentów się rozpoczyna
+        docs_for_scoring = docs_pc | 'LogScoringStart' >> beam.Map(lambda d: (print(_col(f"[SCORE] Przygotowuję do oceny: {d.get('filename')}", "0;33"), flush=True), d)[1])
+
+        scored = docs_for_scoring | 'ScoreDocs' >> beam.Map(
+            score_doc_worker,
+            beam.pvalue.AsDict(df_pc),
+            beam.pvalue.AsSingleton(total_docs),
+            query,
+            sim
+        )
+
+        top = scored | 'TopN' >> beam.combiners.Top.Of(top_n, key=lambda x: x[2])
+
+        _ = (
+            top
+            | 'FlattenTop' >> beam.FlatMap(lambda lst: lst)
+            | 'PrintResults' >> beam.Map(lambda t: (print(_col(f"[RESULT] {t[0]} {t[1]} score={t[2]:.6f}", "1;32"), flush=True), t)[1])
+        )
+
+    print(_col("Zakończono pipeline. Wyniki wypisane powyżej.", "1;36"), flush=True)
+    return None
+
 
 
 if __name__ == "__main__":
-    # top_n = int(os.getenv("SEARCH_TOP", "10"))
     try:
         while True:
             q = input("Wpisz zapytanie (ENTER aby zakończyć): ").strip()
             if not q:
                 break
-            search(q)
+            run_search_pipeline(q)
         print("\nKończę działanie wyszukiwarki.\n")
         exit(0)
     except (EOFError, KeyboardInterrupt):
         pass
-

@@ -4,12 +4,12 @@ import os
 import pathlib
 
 import apache_beam as beam
-from apache_beam.testing.test_pipeline import TestPipeline
+from apache_beam.testing.test_pipeline import TestPipeline as BeamTestPipeline
 from apache_beam.testing.util import assert_that, equal_to
 
 import pytest
 
-import app.indexer as indexer
+import indexer
 
 
 def test_tokenize_and_stopwords():
@@ -67,7 +67,7 @@ def test_pipeline():
                 return False
         return True
 
-    with TestPipeline() as p:
+    with BeamTestPipeline() as p:
         pcoll = p | beam.Create(docs)
 
         doc_tokens = pcoll | "Tokenize" >> beam.Map(lambda kv: (kv[0], indexer.tokenize(kv[1])))

@@ -1,45 +1,37 @@
 # DataAcquisitionProject1
 
-Prosty pipeline indeksujący i wyszukiwający dokumenty tekstowe i zapisujący strukturę indeksu do PostgreSQL. Używa Apache Beam do przetwarzania, psycopg do połączeń z bazą oraz Dockera do uruchomienia środowiska.
+Prosty pipeline indeksujący i wyszukujący dokumenty tekstowe. Indeks (TF‑IDF) zapisuje strukturę do PostgreSQL. Do przetwarzania używa Apache Beam, do komunikacji z bazą — `psycopg`.
 
-## Struktura projektu
+## Zawartość repozytorium
 - `Dockerfile` — obraz aplikacji Python.
 - `docker-compose.yml` — usługi: `postgres` i `app`.
-- `init.sql` — inicjalizacja bazy (tworzenie tabeli `files`).
-- `requirements.txt` — zależności Pythona.
+- `init.sql` — inicjalizacja bazy (tabela `files`).
+- `requirements.txt` — zależności Python.
 - `app/`
   - `indexer.py` — pipeline TF‑IDF + zapis do DB.
-  - `database.py` — helper do Postgresa (create_table, insert_document, fetch_all_documents).
-- `docs/` — przykładowe dokumenty (\`doc1.txt\` ...).
-- `tests/` — testy (uruchom `pytest`).
+  - `database.py` — helpery do Postgresa (`create_table`, `insert_document`, `fetch_all_documents`).
+  - `searcher.py` — interaktywne wyszukiwanie po TF‑IDF.
+  - `docs/` — przykładowe dokumenty.
+- `tests/` — testy jednostkowe.
 
 ## Wymagania
-- Docker i Docker Compose
-- Python 3.11 (do uruchomienia lokalnie bez Dockera)
+- Docker i Docker Compose (zalecane).
+- Python 3.11 (do uruchomienia lokalnego bez Dockera).
 
 ## Uruchomienie (Docker)
-1. Zbudować i uruchomić:
+1. Zbuduj i uruchom wszystkie serwisy:
    - `docker compose up --build`
-2. Wyłączyć i usunąć wolumeny danych:
+2. W kontenerze aplikacji można uruchomić interaktywną wyszukiwarkę:
+   - `docker compose run --rm app python /app/searcher.py`
+3. Zatrzymanie i usunięcie wolumenów danych:
    - `docker compose down -v`
-3. Odpalenie wyszukiwarki:
-   - `docker-compose run --rm app python /app/searcher.py`
 
 ## Zmienne środowiskowe
-Aplikacja odczytuje (przykładowe wartości są w \`docker-compose.yml\`):
+Ustaw w `docker-compose.yml` lub w środowisku (przykład):
 - `DATABASE_HOST`
 - `DATABASE_PORT`
 - `DATABASE_NAME`
 - `DATABASE_USER`
 - `DATABASE_PASSWORD`
+- `SMOOTH_IDF` (opcjonalne; `1` = włączone)
 
-## Testy
-- Uruchom: `pytest`
-
-## Uwagi i troubleshooting
-- `init.sql` tworzy tabelę `files` z kolumną `index_structure JSONB`.  
-- `app/database.py` zawiera prosty retry w `create_table()` — przy pracy z Compose poprawia start przy braku gotowej bazy.  
-- Montowanie wolumenów: montując `./app:/app` nadpisujesz pliki z obrazu — oczekiwane w trybie deweloperskim.  
-- Jeśli instalacja z `requirements.txt` się nie powiedzie, sprawdź kodowanie pliku / usuń niewidoczne znaki i spróbuj ponownie.
-
-Licencja i dalsze instrukcje można dopisać według potrzeb.

@@ -1,13 +1,17 @@
-# language: python
-# File: app/indexer.py
 import os
 import math
-import uuid
 import re
 import unicodedata
 import apache_beam as beam
 from database import create_table, insert_document
+import time
+import sys
+import logging
 
+logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
+def _col(text: str, code: str) -> str:
+    """Zwraca tekst opakowany w kody ANSI (np. '1;33' = bold yellow)."""
+    return f"\033[{code}m{text}\033[0m"
 
 STOPWORDS = {
     # polskie podstawowe
@@ -20,7 +24,7 @@ STOPWORDS = {
     'jednak', 'więc', 'następnie', 'ponieważ', 'gdy', 'kiedy', 'dopóki', 'jeśli',
     'jeżeli', 'chociaż', 'aczkolwiek', 'tak', 'nie', 'nigdy', 'zawsze', 'czasami',
     'przed', 'poza', 'ile', 'który', 'która', 'które', 'którzy', 'których',
-    'któremu', 'którym', 'no', 'mu', 'ma', 'ach', 'hej',
+    'któremu', 'którym', 'no', 'mu', 'ach', 'hej',
     '0','1','2','3','4','5','6','7','8','9',
     'the','and','is','in','of','a','for','on','with','that','this','it',
     'raz','dwa','trzy','cztery','pięć','ile','którykolwiek','sam','sama','same',
@@ -79,17 +83,21 @@ def run_pipeline(docs_dir='docs'):
     file_paths = [os.path.join(docs_dir, f) for f in os.listdir(docs_dir)
                   if os.path.isfile(os.path.join(docs_dir, f))]
     N = len(file_paths)
+    print(_col(f"Rozpoczynam indeksowanie: {N} plików w {docs_dir}", "1;36"), flush=True)
+    print(_col("Tworzę/łączę z bazą danych...", "1;33"), flush=True)
     create_table()  # spróbuj stworzyć tabelę (z retry w database.py)
 
     if N == 0:
+        print(_col("Brak plików do indeksowania.", "1;33"), flush=True)
         return
 
     with beam.Pipeline() as p:
         paths = p | 'CreatePaths' >> beam.Create(file_paths)
 
         doc_tokens = (
-            paths
-            | 'ReadFiles' >> beam.Map(lambda path: (path, tokenize(read_file(path))))
+                paths
+                | 'ReadFiles' >> beam.Map(lambda path: (path, tokenize(read_file(path))))
+                | 'LogRead' >> beam.Map(lambda kv: (print(_col(f"[READ] {kv[0]}", "0;34"), flush=True), kv)[1])
         )
         # doc_counts = doc_tokens | 'Counts' >> beam.Map(lambda kv: (kv[0], compute_counts(kv[1])))
 
@@ -104,10 +112,28 @@ def run_pipeline(docs_dir='docs'):
                                                         beam.pvalue.AsDict(df),N)
         # Generujemy UUID, zapisujemy pełną ścieżkę oraz reprezentację w jednym dict
         (
-                doc_tfidf | 'ToDB' >> beam.Map(lambda kv: insert_document(
-                str(os.path.abspath(kv[0])),{'tfidf': kv[1]}))
+            doc_tfidf   | 'ToDB' >> beam.Map(lambda kv: (
+            print(_col(f"[DB] Dodaję: {os.path.abspath(kv[0])}", "1;33"), flush=True),
+            insert_document(str(os.path.abspath(kv[0])), {'tfidf': kv[1]})
+            )[1])
         )
+    print(_col("Zakończono indeksowanie. Wyniki zapisane w bazie.", "1;32"), flush=True)
 
+
+
+def main():
+    logging.info("Indexing started")
+    start = time.time()
+    try:
+        run_pipeline()
+    except Exception:
+        logging.exception("Błąd podczas dodawania dokumentów do bazy")
+        print("Błąd podczas dodawania dokumentów do bazy. Sprawdź logi.")
+        # zwróć kod błędu do procesu (przydatne w dockerze)
+        sys.exit(1)
+    elapsed = time.time() - start
+    print(_col(f"Czas: {elapsed:.2f}s", "1;32"), flush=True)
+    logging.info("Indexing finished (%.2fs)", elapsed)
 
 if __name__ == '__main__':
-    run_pipeline()
+    main()
