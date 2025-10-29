@@ -15,8 +15,8 @@ Prosty pipeline indeksujący i wyszukujący dokumenty tekstowe. Indeks (TF‑IDF
 - `tests/` — testy jednostkowe.
 
 ## Wymagania
-- Docker i Docker Compose (zalecane).
-- Python 3.11 (do uruchomienia lokalnego bez Dockera).
+- Docker i Docker Compose.
+- Python 3.11.
 
 ## Uruchomienie (Docker)
 1. Zbuduj i uruchom wszystkie serwisy:

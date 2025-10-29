@@ -8,13 +8,15 @@ import time
 import sys
 import logging
 
+
+# Konfiguracja logowania aplikacji
 logging.basicConfig(level=logging.WARNING, format="%(asctime)s %(levelname)s %(message)s")
 def _col(text: str, code: str) -> str:
     """Zwraca tekst opakowany w kody ANSI (np. '1;33' = bold yellow)."""
     return f"\033[{code}m{text}\033[0m"
 
 STOPWORDS = {
-    # polskie podstawowe
+    # polskie podstawowe stopwords
     'i', 'oraz', 'a', 'aż', 'za', 'aby' ,'ale', 'to', 'na', 'w', 'z', 'ze', 'do', 'się', 'jest',
     'być', 'by', 'że', 'czy', 'jak', 'o', 'u', 'po', 'od', 'dla', 'bez', 'przez',
     'pod', 'nad', 'między', 'me', 'mi', 'mnie', 'mną', 'mój', 'moja', 'moje', 'twój',
@@ -45,7 +47,7 @@ def tokenize(text):
         return []
     # normalizacja (usuwa dziwne formy Unicode)
     text = unicodedata.normalize('NFKC', text)
-    # usuń interpunkcję, podziel na tokeny, filtruj stopwords i zbyt krótkie tokeny
+    # usunięcie interpunkcji, dzieli na tokeny, filtruje stopwords i zbyt krótkie tokeny oraz tokeny będące liczbami
     text = re.sub(r'[^\w\sąćęłńóśżźĄĆĘŁŃÓŚŻŹ]', ' ', text, flags=re.UNICODE)
     tokens = [t for t in text.lower().split()
               if len(t) > 1 and not t.isdigit() and t not in STOPWORDS]
@@ -63,7 +65,7 @@ def compute_tf(tokens):
 
 def compute_tfidf_element(elem, df_dict, total_docs):
     """
-    Oblicza TF-IDF; domyślnie używa math.log(N/df) (zgodnie z testami).
+    Oblicza TF-IDF; domyślnie używa math.log(N/df).
     Jeśli ustawisz SMOOTH_IDF = 1 w środowisku, użyje idf = log((1+N)/(1+df)) + 1
     by uniknąć wartości zero.
     """
@@ -85,7 +87,8 @@ def run_pipeline(docs_dir='docs'):
     N = len(file_paths)
     print(_col(f"Rozpoczynam indeksowanie: {N} plików w {docs_dir}", "1;36"), flush=True)
     print(_col("Tworzę/łączę z bazą danych...", "1;33"), flush=True)
-    create_table()  # spróbuj stworzyć tabelę (z retry w database.py)
+    # stworzenie tabeli (w database.py)
+    create_table()
 
     if N == 0:
         print(_col("Brak plików do indeksowania.", "1;33"), flush=True)
@@ -99,7 +102,6 @@ def run_pipeline(docs_dir='docs'):
                 | 'ReadFiles' >> beam.Map(lambda path: (path, tokenize(read_file(path))))
                 | 'LogRead' >> beam.Map(lambda kv: (print(_col(f"[READ] {kv[0]}", "0;34"), flush=True), kv)[1])
         )
-        # doc_counts = doc_tokens | 'Counts' >> beam.Map(lambda kv: (kv[0], compute_counts(kv[1])))
 
         doc_tf = doc_tokens | 'ComputeTF' >> beam.Map(lambda kv: (kv[0], compute_tf(kv[1])))
 
@@ -110,7 +112,8 @@ def run_pipeline(docs_dir='docs'):
 
         doc_tfidf = doc_tf | 'ComputeTFIDF' >> beam.Map(compute_tfidf_element,
                                                         beam.pvalue.AsDict(df),N)
-        # Generujemy UUID, zapisujemy pełną ścieżkę oraz reprezentację w jednym dict
+
+        # Generujemy ścieżkę oraz reprezentację w jednym dict tfidf
         (
             doc_tfidf   | 'ToDB' >> beam.Map(lambda kv: (
             print(_col(f"[DB] Dodaję: {os.path.abspath(kv[0])}", "1;33"), flush=True),
@@ -129,7 +132,6 @@ def main():
     except Exception:
         logging.exception("Błąd podczas dodawania dokumentów do bazy")
         print("Błąd podczas dodawania dokumentów do bazy. Sprawdź logi.")
-        # zwróć kod błędu do procesu (przydatne w dockerze)
         sys.exit(1)
     elapsed = time.time() - start
     print(_col(f"Czas: {elapsed:.2f}s", "1;32"), flush=True)

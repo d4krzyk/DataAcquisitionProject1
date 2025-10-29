@@ -8,7 +8,6 @@ from apache_beam.testing.test_pipeline import TestPipeline as BeamTestPipeline
 from apache_beam.testing.util import assert_that, equal_to
 
 import pytest
-
 import indexer
 
 
@@ -34,7 +33,6 @@ def test_pipeline():
         ("doc1.txt", "kot pies kot"),
         ("doc2.txt", "pies ryba")
     ]
-    # przygotuj oczekiwane wartości TF-IDF
     docs_tokens = {}
     for path, txt in docs:
         toks = indexer.tokenize(txt)
@@ -82,5 +80,4 @@ def test_pipeline():
             expected
         )
 
-        # oczekujemy po jednym True dla każdego dokumentu
         assert_that(checked, equal_to([True] * N))
