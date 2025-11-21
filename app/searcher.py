@@ -103,7 +103,7 @@ def run_search_pipeline(query, top_n=10, similarity_fn=None):
         _ = (
             top
             | 'FlattenTop' >> beam.FlatMap(lambda lst: lst)
-            | 'PrintResults' >> beam.Map(lambda gt: (print(_col(f"[RESULT] {t[0]} {t[1]} score={t[2]:.6f}", "1;32"), flush=True), t)[1])
+            | 'PrintResults' >> beam.Map(lambda t: (print(_col(f"[RESULT] {t[0]} {t[1]} score={t[2]:.6f}", "1;32"), flush=True), t)[1])
         )
 
     print(_col("Zakończono pipeline. Wyniki wypisane powyżej.", "1;36"), flush=True)
