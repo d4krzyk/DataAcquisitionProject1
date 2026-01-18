@@ -15,12 +15,11 @@ def _col(text: str, code: str) -> str:
     return f"\033[{code}m{text}\033[0m"
 
 def compute_idf(token, df_dict, N):
-     smooth = os.getenv('SMOOTH_IDF', '1') == '1'
-     df_val = df_dict.get(token, 0)
-     if smooth:
-         return math.log((1 + N) / (1 + df_val)) + 1.0
-     else:
-         return math.log(N / df_val) if df_val > 0 else 0.0
+    smooth = os.getenv('SMOOTH_IDF', '1') == '1'
+    df_val = df_dict.get(token, 0)
+    if smooth:
+        return math.log((1 + N) / (1 + df_val)) + 1.0
+    return math.log(N / df_val) if df_val > 0 else 0.0
 
 def cosine_similarity(vec_a, vec_b):
     dot = sum(v * vec_b.get(k, 0.0) for k, v in vec_a.items())
@@ -30,37 +29,21 @@ def cosine_similarity(vec_a, vec_b):
         return 0.0
     return dot / (norm_a * norm_b)
 
-
-def _build_qvec_local(query, df_dict, N):
-    tokens = tokenize(query)
-    tf = compute_tf(tokens)
-    qvec = {}
-    for token, tf_val in tf.items():
-        idf = compute_idf(token, df_dict, N)
-        qvec[token] = tf_val * idf
-    return qvec
-
-def score_doc_worker(doc, df_dict, N, query, sim=None):
-    key = query
-    if key not in _qvec_cache:
-        _qvec_cache[key] = _build_qvec_local(query, df_dict, N)
-    qvec = _qvec_cache[key]
-    sfn = sim or cosine_similarity
-    return doc['db_id'], doc['filename'], sfn(qvec, doc.get('tfidf', {}))
-
 def _read_docs_worker(_):
-    # Wywoływane na workerze; używa fetch_all_documents() z app.database
+    # Worker czyta DB -> buduje TF z content
     rows = fetch_all_documents()
     for row in rows:
-        db_id, filename, index_structure = row
-        if isinstance(index_structure, str):
-            try:
-                index_structure = json.loads(index_structure)
-            except Exception:
-                index_structure = {}
-        tfidf = index_structure.get('tfidf', {}) if isinstance(index_structure, dict) else {}
-        yield {'db_id': db_id, 'filename': filename, 'tfidf': tfidf}
+        db_id, path, content, created_at = row
+        text = content or ""
+        tf = compute_tf(tokenize(text))
+        yield {"db_id": db_id, "path": str(path), "tf": tf}
 
+def _tf_to_tfidf(tf_dict: dict, df_dict: dict, n_docs: int) -> dict:
+    return {t: tf * compute_idf(t, df_dict, n_docs) for t, tf in tf_dict.items()}
+
+def _build_query_vec(query: str, df_dict: dict, n_docs: int) -> dict:
+    q_tf = compute_tf(tokenize(query))
+    return {t: tf * compute_idf(t, df_dict, n_docs) for t, tf in q_tf.items()}
 
 def run_search_pipeline(query, top_n=10, similarity_fn=None):
     sim = similarity_fn or cosine_similarity
@@ -76,34 +59,34 @@ def run_search_pipeline(query, top_n=10, similarity_fn=None):
             p
             | 'Init' >> beam.Create([None])
             | 'ReadFromDB' >> beam.FlatMap(_read_docs_worker)
-            | 'LogRead' >> beam.Map(lambda d: (print(_col(f"[READ] id={d.get('db_id')} file={d.get('filename')}", "0;34"), flush=True), d)[1])
         )
 
         total_docs = docs_pc | 'CountDocs' >> beam.combiners.Count.Globally()
 
-        # pokazywanie liczby dokumentów (drukowane w workerze, zwykle pojedynczy wpis)
-        _ = total_docs | 'LogTotal' >> beam.Map(lambda n: (print(_col(f"[COUNT] Łącznie dokumentów: {n}", "1;32"), flush=True), n)[1])
-
-        token_doc_ones = docs_pc | 'TokensPerDoc' >> beam.FlatMap(lambda d: ((t, 1) for t in d.get('tfidf', {}).keys()))
+        token_doc_ones = docs_pc | 'TokensPerDoc' >> beam.FlatMap(
+            lambda d: ((t, 1) for t in d.get('tf', {}).keys()))
         df_pc = token_doc_ones | 'CountDF' >> beam.CombinePerKey(sum)
 
-        # ocena dokumentów się rozpoczyna
-        docs_for_scoring = docs_pc | 'LogScoringStart' >> beam.Map(lambda d: (print(_col(f"[SCORE] Przygotowuję do oceny: {d.get('filename')}", "0;33"), flush=True), d)[1])
-
-        scored = docs_for_scoring | 'ScoreDocs' >> beam.Map(
-            score_doc_worker,
+        scored = docs_pc | "ScoreDocs" >> beam.Map(
+            lambda d, df_dict, n_docs: (
+                d["path"],
+                sim(
+                    _build_query_vec(query, df_dict, n_docs),
+                    _tf_to_tfidf(d.get("tf", {}), df_dict, n_docs),
+                ),
+            ),
             beam.pvalue.AsDict(df_pc),
             beam.pvalue.AsSingleton(total_docs),
-            query,
-            sim
         )
 
-        top = scored | 'TopN' >> beam.combiners.Top.Of(top_n, key=lambda x: x[2])
+        top = scored | 'TopN' >> beam.combiners.Top.Of(top_n, key=lambda x: x[1])
 
         _ = (
             top
             | 'FlattenTop' >> beam.FlatMap(lambda lst: lst)
-            | 'PrintResults' >> beam.Map(lambda t: (print(_col(f"[RESULT] {t[0]} {t[1]} score={t[2]:.6f}", "1;32"), flush=True), t)[1])
+            | 'PrintResults' >> beam.Map(
+                lambda r: print(_col(f"{r[0]}  score={r[1]:.6f}", "1;32"), flush=True)
+            )
         )
 
     print(_col("Zakończono pipeline. Wyniki wypisane powyżej.", "1;36"), flush=True)

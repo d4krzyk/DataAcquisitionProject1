@@ -3,7 +3,7 @@ import math
 import re
 import unicodedata
 import apache_beam as beam
-from database import create_table, insert_document
+from database import create_table, insert_document, fetch_all_documents
 import time
 import sys
 import logging
@@ -49,8 +49,9 @@ def tokenize(text):
     text = unicodedata.normalize('NFKC', text)
     # usunięcie interpunkcji, dzieli na tokeny, filtruje stopwords i zbyt krótkie tokeny oraz tokeny będące liczbami
     text = re.sub(r'[^\w\sąćęłńóśżźĄĆĘŁŃÓŚŻŹ]', ' ', text, flags=re.UNICODE)
-    tokens = [t for t in text.lower().split()
-              if len(t) > 1 and not t.isdigit() and t not in STOPWORDS]
+    tokens = [
+        t for t in text.lower().split()
+        if len(t) > 1 and not t.isdigit() and t not in STOPWORDS]
     return tokens
 
 def compute_tf(tokens):
@@ -81,46 +82,64 @@ def compute_tfidf_element(elem, df_dict, total_docs):
         tfidf[token] = tf_value * idf
     return (path, tfidf)
 
+
+def _read_db_docs_as_text():
+    rows = fetch_all_documents()
+    for row in rows:
+        db_id, path, content, created_at = row
+        yield str(path), (content or "")
+
+def _normalize_and_upsert(kv):
+    path, content = kv
+    # DB ma content TEXT -> gwarantujemy string
+    insert_document(str(path), str(content or ""))
+    return kv
+
 def run_pipeline(docs_dir='docs'):
-    file_paths = [os.path.join(docs_dir, f) for f in os.listdir(docs_dir)
-                  if os.path.isfile(os.path.join(docs_dir, f))]
-    N = len(file_paths)
-    print(_col(f"Rozpoczynam indeksowanie: {N} plików w {docs_dir}", "1;36"), flush=True)
-    print(_col("Tworzę/łączę z bazą danych...", "1;33"), flush=True)
-    # stworzenie tabeli (w database.py)
+    """
+    Indekser dla crawlera: bierze dokumenty z DB (URL->content),
+    dodaje tylko niezindeksowane (tu: upsert w DB już dba o spójność),
+    a w praktyce to jest miejsce na ewentualne rozszerzenia.
+    Obecnie: jest to etap walidacji i normalizacji (przechowujemy surowy tekst w DB).
+    """
+    print(_col("Indekser: start", "1;36"), flush=True)
     create_table()
-
-    if N == 0:
-        print(_col("Brak plików do indeksowania.", "1;33"), flush=True)
-        return
-
     with beam.Pipeline() as p:
-        paths = p | 'CreatePaths' >> beam.Create(file_paths)
-
-        doc_tokens = (
-                paths
-                | 'ReadFiles' >> beam.Map(lambda path: (path, tokenize(read_file(path))))
-                | 'LogRead' >> beam.Map(lambda kv: (print(_col(f"[READ] {kv[0]}", "0;34"), flush=True), kv)[1])
+        _ = (
+            p
+            | "CreateDocs" >> beam.Create(list(_read_db_docs_as_text()))
+            | "NormalizeAndUpsert" >> beam.Map(_normalize_and_upsert)
         )
 
-        doc_tf = doc_tokens | 'ComputeTF' >> beam.Map(lambda kv: (kv[0], compute_tf(kv[1])))
+    print(_col("Indekser\\: zakończono", "1;32"), flush=True)
 
-        token_doc_ones = doc_tokens | 'UniqueTokensPerDoc' >> beam.FlatMap(lambda kv:
-                                                    ((token, 1) for token in set(kv[1])))
-
-        df = token_doc_ones | 'CountDF' >> beam.CombinePerKey(sum)
-
-        doc_tfidf = doc_tf | 'ComputeTFIDF' >> beam.Map(compute_tfidf_element,
-                                                        beam.pvalue.AsDict(df),N)
-
-        # Generujemy ścieżkę oraz reprezentację w jednym dict tfidf
-        (
-            doc_tfidf   | 'ToDB' >> beam.Map(lambda kv: (
-            print(_col(f"[DB] Dodaję: {os.path.abspath(kv[0])}", "1;33"), flush=True),
-            insert_document(str(os.path.abspath(kv[0])), {'tfidf': kv[1]})
-            )[1])
-        )
-    print(_col("Zakończono indeksowanie. Wyniki zapisane w bazie.", "1;32"), flush=True)
+    # with beam.Pipeline() as p:
+    #     paths = p | 'CreatePaths' >> beam.Create(file_paths)
+    #
+    #     doc_tokens = (
+    #             paths
+    #             | 'ReadFiles' >> beam.Map(lambda path: (path, tokenize(read_file(path))))
+    #             | 'LogRead' >> beam.Map(lambda kv: (print(_col(f"[READ] {kv[0]}", "0;34"), flush=True), kv)[1])
+    #     )
+    #
+    #     doc_tf = doc_tokens | 'ComputeTF' >> beam.Map(lambda kv: (kv[0], compute_tf(kv[1])))
+    #
+    #     token_doc_ones = doc_tokens | 'UniqueTokensPerDoc' >> beam.FlatMap(lambda kv:
+    #                                                 ((token, 1) for token in set(kv[1])))
+    #
+    #     df = token_doc_ones | 'CountDF' >> beam.CombinePerKey(sum)
+    #
+    #     doc_tfidf = doc_tf | 'ComputeTFIDF' >> beam.Map(compute_tfidf_element,
+    #                                                     beam.pvalue.AsDict(df),N)
+    #
+    #     # Generujemy ścieżkę oraz reprezentację w jednym dict tfidf
+    #     (
+    #         doc_tfidf   | 'ToDB' >> beam.Map(lambda kv: (
+    #         print(_col(f"[DB] Dodaję: {os.path.abspath(kv[0])}", "1;33"), flush=True),
+    #         insert_document(str(os.path.abspath(kv[0])), {'tfidf': kv[1]})
+    #         )[1])
+    #     )
+    # print(_col("Zakończono indeksowanie. Wyniki zapisane w bazie.", "1;32"), flush=True)
 
 
 

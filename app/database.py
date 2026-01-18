@@ -1,9 +1,8 @@
-# language: python
-# File: app/database.py
+# app/database.py
 import os
-import json
 import time
 import psycopg
+
 
 def _conn():
     return psycopg.connect(
@@ -14,56 +13,82 @@ def _conn():
         password=os.getenv("DATABASE_PASSWORD", "pass123"),
     )
 
-def create_table(retries=10, delay=1):
+
+def create_table(retries: int = 10, delay: float = 1.0):
+    """
+    Zapewnia schemat:
+    files(id serial pk, path text unique, content text, created_at timestamptz default now()).
+
+    Obsługuje istniejący wolumen z wcześniejszym schematem:
+    - tworzy tabelę jeśli nie istnieje
+    - dodaje brakujące kolumny
+    - dodaje brakujący unikalny indeks/constraint na path
+    """
     for attempt in range(retries):
         try:
             with _conn() as conn:
                 with conn.cursor() as cur:
-                    cur.execute("""
-                    CREATE TABLE IF NOT EXISTS files (
-                        id SERIAL PRIMARY KEY,
-                        filename TEXT NOT NULL UNIQUE,
-                        index_structure JSONB NOT NULL
+                    # Tabela (minimum)
+                    cur.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS files (
+                          id SERIAL PRIMARY KEY
+                        );
+                        """
                     )
-                    """)
+
+                    # Kolumny (migracja bezpieczna)
+                    cur.execute("ALTER TABLE files ADD COLUMN IF NOT EXISTS path TEXT;")
+                    cur.execute("ALTER TABLE files ADD COLUMN IF NOT EXISTS content TEXT;")
+                    cur.execute(
+                        "ALTER TABLE files ADD COLUMN IF NOT EXISTS created_at TIMESTAMP DEFAULT now();"
+                    )
+
+                    # Unikalność path (jako indeks, działa nawet jeśli constraint nie istniał)
+                    cur.execute(
+                        """
+                        DO $$
+                        BEGIN
+                          IF NOT EXISTS (
+                            SELECT 1
+                            FROM pg_indexes
+                            WHERE schemaname = current_schema()
+                              AND tablename = 'files'
+                              AND indexname = 'files_path_key'
+                          ) THEN
+                            CREATE UNIQUE INDEX files_path_key ON files(path);
+                          END IF;
+                        END $$;
+                        """
+                    )
             return
         except Exception:
             if attempt == retries - 1:
                 raise
             time.sleep(delay)
 
-def insert_document(filename, index_structure):
-    # index_structure może być dict lub już json string
-    new_json = index_structure if isinstance(index_structure, str) else json.dumps(index_structure)
+
+def insert_document(path: str, content: str):
+    if content is None:
+        content = ""
+
     with _conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT index_structure FROM files WHERE filename = %s", (filename,))
-            row = cur.fetchone()
-            if row:
-                existing = row[0]
-                # row[0] może być już dict (psycopg może zwrócić deserializowany JSON) albo string
-                if isinstance(existing, (dict, list)):
-                    existing_json = json.dumps(existing, sort_keys=True)
-                else:
-                    existing_json = json.dumps(json.loads(existing), sort_keys=True) if isinstance(existing,
-                                                                                                   str) else str(
-                        existing)
-                if existing_json == new_json:
-                    # Nic do zrobienia
-                    return
-                # Aktualizuj tylko gdy zawartość się zmieniła
-                cur.execute(
-                    "UPDATE files SET index_structure = %s WHERE filename = %s",
-                    (new_json, filename)
-                )
-            else:
-                cur.execute(
-                    "INSERT INTO files (filename, index_structure) VALUES (%s, %s)",
-                    (filename, new_json)
-                )
+            cur.execute(
+                """
+                INSERT INTO files (path, content)
+                VALUES (%s, %s)
+                ON CONFLICT (path)
+                DO UPDATE SET
+                    content = EXCLUDED.content,
+                    created_at = now();
+                """,
+                (path, content),
+            )
+
 
 def fetch_all_documents():
     with _conn() as conn:
         with conn.cursor() as cur:
-            cur.execute("SELECT id, filename, index_structure FROM files")
+            cur.execute("SELECT id, path, content, created_at FROM files ORDER BY id;")
             return cur.fetchall()
