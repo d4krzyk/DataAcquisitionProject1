@@ -21,7 +21,7 @@ def _env(name: str, default=None):
 
 HTTP_USER_AGENT = _env(
     "CRAWLER_USER_AGENT",
-    "index-searcher/1.0 (+https://github.com/d4krzyk) (wiki-crawler; contact: d4krzyk)",
+    "index-searcher/1.0 (+https://example.com/botinfo)",
 )
 
 ROBOTS_AGENT = _env("CRAWLER_ROBOTS_AGENT", "*")
@@ -106,10 +106,10 @@ def extract_text_and_links(html: str, base_url: str):
     for tag in soup(["script", "style", "noscript", "meta", "header", "footer"]):
         tag.decompose()
 
-    text = soup.get_text(separator=" ", strip=True)
-
+    # Najpierw zbieramy linki z elementów <a>
     links = set()
-    for a in soup.find_all("a", href=True):
+    anchors = soup.find_all("a", href=True)
+    for a in anchors:
         href = a.get("href")
         if not href or href.startswith("#"):
             continue
@@ -119,6 +119,11 @@ def extract_text_and_links(html: str, base_url: str):
         if is_wiki_link(full):
             links.add(canonicalize(full))
 
+    # Usuwamy elementy <a>, żeby ich tekst nie pojawił się w main text
+    for a in anchors:
+        a.decompose()
+
+    text = soup.get_text(separator=" ", strip=True)
     return text, links
 
 

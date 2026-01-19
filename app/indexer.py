@@ -36,12 +36,12 @@ STOPWORDS = {
     'bo', 'co', 'ty', 'ją', 'cię', 'lub', 'oto', 'chce', 'twe', 'twa', 'go'
 }
 
-def read_file(path):
-    with open(path, encoding='utf-8') as f:
-        return f.read()
-    return None
-
-
+# def read_file(path):
+#     with open(path, encoding='utf-8') as f:
+#         return f.read()
+#     return None
+#
+#
 def tokenize(text):
     if not text:
         return []
@@ -63,24 +63,24 @@ def compute_tf(tokens):
         counts[t] = counts.get(t, 0) + 1
     return {t: c / total for t, c in counts.items()}
 
-
-def compute_tfidf_element(elem, df_dict, total_docs):
-    """
-    Oblicza TF-IDF; domyślnie używa math.log(N/df).
-    Jeśli ustawisz SMOOTH_IDF = 1 w środowisku, użyje idf = log((1+N)/(1+df)) + 1
-    by uniknąć wartości zero.
-    """
-    path, tf_dict = elem
-    tfidf = {}
-    smooth = os.getenv('SMOOTH_IDF', '1') == '1'
-    for token, tf_value in tf_dict.items():
-        df_val = df_dict.get(token, 1)
-        if smooth:
-            idf = math.log((1 + total_docs) / (1 + df_val)) + 1.0
-        else:
-            idf = math.log(total_docs / df_val) if df_val > 0 else 0.0
-        tfidf[token] = tf_value * idf
-    return (path, tfidf)
+#
+# def compute_tfidf_element(elem, df_dict, total_docs):
+#     """
+#     Oblicza TF-IDF; domyślnie używa math.log(N/df).
+#     Jeśli ustawisz SMOOTH_IDF = 1 w środowisku, użyje idf = log((1+N)/(1+df)) + 1
+#     by uniknąć wartości zero.
+#     """
+#     path, tf_dict = elem
+#     tfidf = {}
+#     smooth = os.getenv('SMOOTH_IDF', '1') == '1'
+#     for token, tf_value in tf_dict.items():
+#         df_val = df_dict.get(token, 1)
+#         if smooth:
+#             idf = math.log((1 + total_docs) / (1 + df_val)) + 1.0
+#         else:
+#             idf = math.log(total_docs / df_val) if df_val > 0 else 0.0
+#         tfidf[token] = tf_value * idf
+#     return (path, tfidf)
 
 
 def _read_db_docs_as_text():

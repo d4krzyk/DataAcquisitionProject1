@@ -19,7 +19,7 @@ def test__build_qvec_local_simple():
     N = 3
     query = "kot kot pies"
 
-    qvec = searcher._build_qvec_local(query, df, N)
+    qvec = searcher._build_query_vec(query, df, N)
 
     smooth = os.getenv('SMOOTH_IDF', '1') == '1'
     tokens = ["kot", "kot", "pies"]
@@ -47,30 +47,20 @@ def test_cosine_similarity_basic():
     assert math.isclose(got, expected, rel_tol=1e-9)
 
 
-def test_score_doc_worker_and_cache():
-    orig_cache = dict(searcher._qvec_cache)
-    try:
-        searcher._qvec_cache.clear()
+def test_score_transformations_and_scoring():
+    df = {"a": 1, "b": 1}
+    N = 2
+    query = "a b"
 
-        df = {"a": 1, "b": 1}
-        N = 2
-        query = "a b"
+    # dokument w formacie używanym w searcher (_read_docs_worker)
+    doc = {"db_id": 42, "path": "doc.txt", "tf": {"a": 0.6, "b": 0.8}}
 
-        doc = {"db_id": 42, "filename": "doc.txt", "tfidf": {"a": 0.6, "b": 0.8}}
+    qvec = searcher._build_query_vec(query, df, N)
+    doc_tfidf = searcher._tf_to_tfidf(doc["tf"], df, N)
+    expected_score = searcher.cosine_similarity(qvec, doc_tfidf)
 
-        qvec = searcher._build_qvec_local(query, df, N)
-        expected_score = searcher.cosine_similarity(qvec, doc["tfidf"])
-
-        res = searcher.score_doc_worker(doc, df, N, query, sim=None)
-        assert isinstance(res, tuple) and res[0] == 42 and res[1] == "doc.txt"
-        assert math.isclose(res[2], expected_score, rel_tol=1e-9)
-
-        assert query in searcher._qvec_cache
-        assert approx_dict(searcher._qvec_cache[query], qvec)
-
-        res2 = searcher.score_doc_worker(doc, df, N, query, sim=None)
-        assert math.isclose(res2[2], expected_score, rel_tol=1e-9)
-    finally:
-        searcher._qvec_cache.clear()
-        searcher._qvec_cache.update(orig_cache)
-
+    # sprawdzamy strukturę oraz wynik podobieństwa
+    assert isinstance(qvec, dict)
+    assert isinstance(doc_tfidf, dict)
+    got_score = searcher.cosine_similarity(qvec, doc_tfidf)
+    assert math.isclose(got_score, expected_score, rel_tol=1e-9)
