@@ -36,12 +36,6 @@ STOPWORDS = {
     'bo', 'co', 'ty', 'ją', 'cię', 'lub', 'oto', 'chce', 'twe', 'twa', 'go'
 }
 
-# def read_file(path):
-#     with open(path, encoding='utf-8') as f:
-#         return f.read()
-#     return None
-#
-#
 def tokenize(text):
     if not text:
         return []

@@ -43,12 +43,13 @@ services:
       DATABASE_NAME: index_searcher_db
       DATABASE_USER: a_user
       DATABASE_PASSWORD: pass123
-      CRAWLER_START_URL: "https://pl.wikipedia.org/wiki/Toru%C5%84"
       CRAWLER_USER_AGENT: "index-searcher/1.0 (+https://github.com/d4krzyk)"
       CRAWLER_ROBOTS_AGENT: "*"               # domyślnie '*' lub inny agent
       CRAWLER_MAX_DEPTH: "2"
       CRAWLER_DELAY: "1.0"
+      CRAWLER_START_URL: "https://pl.wikipedia.org/wiki/Toru%C5%84"
       CRAWLER_ALLOWED_DOMAIN: "pl.wikipedia.org"
+      CRAWLER_LINK_PATH_REGEX: "^/wiki/[^:#]*$"
 
       # rate limiting / redis
       CRAWLER_REDIS_URL: "redis://redis:6379"

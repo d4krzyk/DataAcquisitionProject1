@@ -30,7 +30,6 @@ def cosine_similarity(vec_a, vec_b):
     return dot / (norm_a * norm_b)
 
 def _read_docs_worker(_):
-    # Worker czyta DB -> buduje TF z content
     rows = fetch_all_documents()
     for row in rows:
         db_id, path, content, created_at = row
@@ -54,7 +53,6 @@ def run_search_pipeline(query, top_n=10, similarity_fn=None):
     print(_col("Czytam dokumenty z bazy...", "0;37"), flush=True)
 
     with beam.Pipeline() as p:
-        # inicjalny element, żeby wywołać czytanie w workerze
         docs_pc = (
             p
             | 'Init' >> beam.Create([None])

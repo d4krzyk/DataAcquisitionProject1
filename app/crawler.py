@@ -46,12 +46,11 @@ def is_allowed(key: str) -> bool:
 
 
 def _wait_for_rate_limit(key: str):
-    # Proste, deterministyczne "czekaj aż wpuści"
     while not is_allowed(key):
         time.sleep(0.05)
 
-
-WIKI_LINK_RE = re.compile(r"^/wiki/[^:#]*$")
+LINK_PATH_REGEX = _env("CRAWLER_LINK_PATH_REGEX", r"^/wiki/[^:#]*$")
+LINK_PATH_RE = re.compile(LINK_PATH_REGEX)
 
 
 def canonicalize(url: str) -> str:
@@ -59,13 +58,13 @@ def canonicalize(url: str) -> str:
     return f"{p.scheme}://{p.netloc}{p.path}"
 
 
-def is_wiki_link(href: str) -> bool:
+def is_allowed_link(href: str) -> bool:
     if not href:
         return False
     parsed = urlparse(href)
     if parsed.netloc and ALLOWED_DOMAIN not in parsed.netloc:
         return False
-    return bool(WIKI_LINK_RE.match(parsed.path))
+    return bool(LINK_PATH_RE.match(parsed.path))
 
 
 def _robots_url_for(any_url: str) -> str:
@@ -106,7 +105,7 @@ def extract_text_and_links(html: str, base_url: str):
     for tag in soup(["script", "style", "noscript", "meta", "header", "footer"]):
         tag.decompose()
 
-    # Najpierw zbieramy linki z elementów <a>
+    # Najpierw zbieranie linków z elementów <a>
     links = set()
     anchors = soup.find_all("a", href=True)
     for a in anchors:
@@ -116,10 +115,10 @@ def extract_text_and_links(html: str, base_url: str):
         if href.startswith("//"):
             href = "https:" + href
         full = urljoin(base_url, href)
-        if is_wiki_link(full):
+        if is_allowed_link(full):
             links.add(canonicalize(full))
 
-    # Usuwamy elementy <a>, żeby ich tekst nie pojawił się w main text
+    # Usuwanie elementów <a>, żeby ich tekst nie pojawił się w main text
     for a in anchors:
         a.decompose()
 

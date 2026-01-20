@@ -1,6 +1,6 @@
-# DataAcquisitionProject1
+# DataAcquisitionProject1.2
 
-Prosty pipeline indeksujący i wyszukujący dokumenty tekstowe. Indeks (TF‑IDF) zapisuje strukturę do PostgreSQL. Do przetwarzania używa Apache Beam, do komunikacji z bazą — `psycopg`.
+System do przeszukiwania internetu, który przegląda strony z wybranych domen (z ograniczeniem głębokości i rate limiterem), indeksuje ich zawartość i pozwala wyszukiwać najbardziej trafne adresy URL.
 
 ## Zawartość repozytorium
 
@@ -40,21 +40,14 @@ Najważniejsze:
 - `SMOOTH_IDF` — `1` = wygładzone IDF (opcjonalne)
 - `PYTHONWARNINGS` — np. `"ignore::DeprecationWarning"` (opcjonalne, do testów)
 
-Opcjonalne / crawler / rate:
+Crawler / rate:
 - `CRAWLER_START_URL`, `CRAWLER_MAX_DEPTH`, `CRAWLER_DELAY`, `CRAWLER_ALLOWED_DOMAIN`
 - `CRAWLER_USER_AGENT`
 - `CRAWLER_REDIS_URL`, `RATE_PER_SEC`, `RATE_KEY`
+- `CRAWLER_START_URL` \- pełny URL startowy (np. `https://example.com/wiki/Toru%C5%84`)
+- `CRAWLER_ALLOWED_DOMAIN` \- pojedyncza dozwolona domena (np. `example.com`)
+- `CRAWLER_LINK_PATH_REGEX` \- regex ścieżek, domyślnie `^/wiki/[^:#]*$`
 - `PYTHONPATH` — np. `/app`
-
-Przykład (fragment `docker-compose.yml`):
-```yaml
-environment:
-  DATABASE_HOST: postgres
-  DATABASE_PORT: 5432
-  DATABASE_NAME: index_searcher_db
-  DATABASE_USER: a_user
-  DATABASE_PASSWORD: pass123
-  SMOOTH_IDF: "1"
-  PYTHONWARNINGS: "ignore::DeprecationWarning"
+- 
 
 
